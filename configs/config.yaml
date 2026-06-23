@@ -1,0 +1,99 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# config.yaml
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Output directory ──────────────────────────────────────────────────────────
+output_dir: E:\Research\CDHE\data\
+# Files will be stored as:
+#   data/{model}/{scenario}/{variable}/{filename}.nc
+
+# ── THREDDS base URL (do not change) ─────────────────────────────────────────
+thredds_base: "https://ds.nccs.nasa.gov/thredds/ncss/grid/AMES/NEX/GDDP-CMIP6"
+
+# ── Indonesia bounding box ────────────────────────────────────────────────────
+bbox:
+  north:  7      # °N
+  south: -11     # °S
+  west:   94     # °E
+  east:  141     # °E
+
+# ── Variables to download ─────────────────────────────────────────────────────
+variables:
+  - pr        # precipitation (kg/m²/s) → convert to mm/day later (× 86400)
+  - tasmax    # daily maximum temperature (K)
+
+# ── Scenarios and their year ranges ──────────────────────────────────────────
+scenarios:
+  historical:
+    years: [1981, 2014]   
+  ssp245:
+    years: [2015, 2100]
+  ssp585:
+    years: [2015, 2100]
+
+# ── Models and their ensemble members ────────────────────────────────────────
+models:
+  ACCESS-CM2:
+    member: r1i1p1f1
+  ACCESS-ESM1-5:
+    member: r1i1p1f1
+  BCC-CSM2-MR:
+    member: r1i1p1f1
+  CanESM5:
+    member: r1i1p1f1
+  CMCC-CM2-SR5:
+    member: r1i1p1f1
+  CMCC-ESM2:
+    member: r1i1p1f1
+  EC-Earth3:
+    member: r1i1p1f1
+  EC-Earth3-Veg-LR:
+    member: r1i1p1f1
+  GFDL-CM4:
+    member: r1i1p1f1
+  GFDL-ESM4:
+    member: r1i1p1f1
+  IITM-ESM:
+    member: r1i1p1f1
+  INM-CM4-8:
+    member: r1i1p1f1
+  INM-CM5-0:
+    member: r1i1p1f1
+  IPSL-CM6A-LR:
+    member: r1i1p1f1
+  KACE-1-0-G:
+    member: r1i1p1f1
+  KIOST-ESM:
+    member: r1i1p1f1
+  MIROC6:
+    member: r1i1p1f1
+  MPI-ESM1-2-HR:
+    member: r1i1p1f1
+  MPI-ESM1-2-LR:
+    member: r1i1p1f1
+  MRI-ESM2-0:
+    member: r1i1p1f1
+  NESM3:
+    member: r1i1p1f1
+  NorESM2-LM:
+    member: r1i1p1f1
+  NorESM2-MM:
+    member: r1i1p1f1
+  TaiESM1:
+    member: r1i1p1f1
+
+# ── Download settings ─────────────────────────────────────────────────────────
+download:
+  max_workers: 2          # parallel downloads
+  timeout_seconds: 300    # per-file timeout
+  retry_attempts: 5       # retry on 503/timeout before giving up
+  retry_wait_seconds: 15  # base wait
+  skip_existing: true     # skip files already downloaded
+  chunk_size: 8192        # bytes per read chunk
+
+# ── Period settings ─────────────────────────────────────────────────────────
+period:
+  threshold: [1981, 2014]
+  past: [1981, 2020]
+  near_future: [2021, 2060]
+  far_future: [2061, 2100]
