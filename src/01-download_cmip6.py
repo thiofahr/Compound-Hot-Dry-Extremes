@@ -1,5 +1,5 @@
 """
-01_01-download_cmip6.py
+01-download_cmip6.py
 ═══════════════════════════════════════════════════════════════════════════════
 Downloads NEX-GDDP-CMIP6 data for Indonesia from the NASA NCCS THREDDS server.
 
