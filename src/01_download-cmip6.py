@@ -1,5 +1,5 @@
 """
-01-download_cmip6.py
+01_download-cmip6.py
 ═══════════════════════════════════════════════════════════════════════════════
 Downloads NEX-GDDP-CMIP6 data for Indonesia from the NASA NCCS THREDDS server.
 
@@ -21,22 +21,22 @@ data/
 USAGE
 ─────
   # Download everything defined in config.yaml:
-  python 01-download_cmip6.py
+  python 01_download-cmip6.py
 
   # Only one model:
-  python 01-download_cmip6.py --models ACCESS-CM2
+  python 01_download-cmip6.py --models ACCESS-CM2
 
   # Only one scenario:
-  python 01-download_cmip6.py --scenarios historical
+  python 01_download-cmip6.py --scenarios historical
 
   # Only one variable:
-  python 01-download_cmip6.py --variables pr
+  python 01_download-cmip6.py --variables pr
 
   # Combine filters:
-  python 01-download_cmip6.py --models ACCESS-CM2 MIROC6 --scenarios ssp245 ssp585
+  python 01_download-cmip6.py --models ACCESS-CM2 MIROC6 --scenarios ssp245 ssp585
 
   # Dry run (show what would be downloaded without downloading):
-  python 01-download_cmip6.py --dry-run
+  python 01_download-cmip6.py --dry-run
 
 ═══════════════════════════════════════════════════════════════════════════════
 """
@@ -47,7 +47,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-
+import csv
 import requests
 import yaml
 from tqdm import tqdm
@@ -55,7 +55,6 @@ from tqdm import tqdm
 # ══════════════════════════════════════════════════════════════════════════════
 # LOGGING SETUP
 # ══════════════════════════════════════════════════════════════════════════════
-
 import sys
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
@@ -75,7 +74,6 @@ log = logging.getLogger(__name__)
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 — DATA CLASSES
 # ══════════════════════════════════════════════════════════════════════════════
-
 @dataclass
 class DownloadTask:
     """
@@ -133,7 +131,6 @@ def load_config(config_path: str = r"configs/config.yaml") -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION 3 — URL BUILDER
 # ══════════════════════════════════════════════════════════════════════════════
-
 def build_thredds_url(
     base:     str,
     model:    str,
@@ -276,6 +273,112 @@ def generate_tasks(
                     ))
 
     log.info(f"Generated {len(tasks)} download tasks")
+    return tasks
+
+
+def build_thredds_url_from_csv(
+    base: str,
+    csv_row: dict,
+    bbox: dict,
+) -> tuple[str, str]:
+    """
+    Build the THREDDS NCSS URL from a row of the NEX-GDDP-CMIP6 file manifest CSV.
+
+    Using the manifest's own 'url' and 'filename' columns avoids guessing the
+    grid label (gn / gr1 / gr2 / gr) — different models use different grid
+    codes and reconstructing the filename from scratch silently produces a
+    404 for any model that isn't 'gn'.
+
+    Manifest CSV columns (per your example):
+        md5, url, dataset, model, scenario, member, variable,
+        filename, timescale, grid, year, version
+
+    Args:
+        base    : THREDDS NCSS base URL, e.g.
+                  "https://ds.nccs.nasa.gov/thredds/ncss/grid/AMES/NEX/GDDP-CMIP6"
+        csv_row : one row of the manifest, as a dict (e.g. from csv.DictReader
+                  or df.to_dict("records")[i])
+        bbox    : dict with keys north, south, west, east
+
+    Returns:
+        (full_url, filename) — filename is the manifest's filename, used
+        as-is for the local destination path so grid labels stay correct.
+    """
+    parts = csv_row["url"].split("/", 1)  # split off the first segment (dataset name)
+    rel_path = parts[1] if len(parts) == 2 else csv_row["url"]
+
+    filename = csv_row["filename"]
+    year     = csv_row["year"]
+    variable = csv_row["variable"]
+
+    path = f"{base}/{rel_path}"
+    params = (
+        f"var={variable}"
+        f"&north={bbox['north']}"
+        f"&west={bbox['west']}"
+        f"&east={bbox['east']}"
+        f"&south={bbox['south']}"
+        f"&horizStride=1"
+        f"&time_start={year}-01-01T12:00:00Z"
+        f"&time_end={year}-12-31T12:00:00Z"
+        f"&accept=netcdf4-classic"
+    )
+    return f"{path}?{params}", filename
+
+def generate_tasks_from_csv(
+    csv_path:          str,
+    cfg:               dict,
+    filter_models:     list[str] | None = None,
+    filter_scenarios:  list[str] | None = None,
+    filter_variables:  list[str] | None = None,
+) -> list[DownloadTask]:
+    output_root = Path(cfg["output_dir"]) / "raw"
+    tasks = []
+
+    with open(csv_path, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            model    = row["model"]
+            scenario = row["scenario"]
+            variable = row["variable"]
+            member   = row["member"]
+            year     = int(row["year"])
+
+            if filter_models and model not in filter_models:
+                continue
+            if filter_scenarios and scenario not in filter_scenarios:
+                continue
+            if filter_variables and variable not in filter_variables:
+                continue
+
+            # NEW — apply the year range from config.yaml's scenarios block
+            scen_cfg = cfg["scenarios"].get(scenario)
+            if scen_cfg and "years" in scen_cfg:
+                year_start, year_end = scen_cfg["years"]
+                if not (year_start <= year <= year_end):
+                    continue
+
+            url, filename = build_thredds_url_from_csv(
+                base=cfg["thredds_base"],
+                csv_row=row,
+                bbox=cfg["bbox"],
+            )
+
+            dest_dir = output_root / model / scenario / variable
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_path = dest_dir / filename
+
+            tasks.append(DownloadTask(
+                model=model,
+                scenario=scenario,
+                variable=variable,
+                year=year,
+                member=member,
+                url=url,
+                dest_path=dest_path,
+            ))
+
+    log.info(f"Generated {len(tasks)} download tasks from {csv_path}")
     return tasks
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -493,54 +596,6 @@ def download_all(tasks: list[DownloadTask], cfg: dict, dry_run: bool = False):
 # SECTION 7 — CATALOG WRITER
 # ══════════════════════════════════════════════════════════════════════════════
 
-def write_catalog(cfg: dict):
-    """
-    After downloading, write a simple CSV catalog of all local files.
-
-
-    Output: data/catalog.csv
-    columns: model, scenario, variable, year, member, path
-    """
-    import csv
-    output_root = Path(cfg["output_dir"])
-    catalog_path = output_root / "catalog.csv"
-
-    rows = []
-    # Walk the output directory and collect all .nc files
-    for nc_file in sorted(output_root.rglob("*.nc")):
-        # Parse path components: data/{model}/{scenario}/{variable}/{filename}
-        parts = nc_file.relative_to(output_root).parts
-        if len(parts) != 4:
-            continue
-        model, scenario, variable, filename = parts
-
-        # Extract year from filename
-        # Pattern: {var}_day_{model}_{scenario}_{member}_gn_{year}.nc
-        try:
-            stem_parts = nc_file.stem.split("_")
-            year   = int(stem_parts[-1])
-            member = stem_parts[-3]
-        except (IndexError, ValueError):
-            continue
-
-        rows.append({
-            "model":    model,
-            "scenario": scenario,
-            "variable": variable,
-            "year":     year,
-            "member":   member,
-            "path":     str(nc_file),
-        })
-
-    with open(catalog_path, "w", newline="") as f:
-        writer = csv.DictWriter(
-            f, fieldnames=["model", "scenario", "variable", "year", "member", "path"]
-        )
-        writer.writeheader()
-        writer.writerows(rows)
-
-    print(f"\n✓ Catalog written: {catalog_path} ({len(rows)} files)")
-
 
 def write_catalog(cfg: dict):
     import csv
@@ -556,9 +611,8 @@ def write_catalog(cfg: dict):
 
         try:
             stem_parts = nc_file.stem.split("_")
-            # stem ends in  …_gn_1980_v2.0  →  [-1]="v2.0", [-2]="1980", [-4]="member"
-            year   = int(stem_parts[-2])   # was stem_parts[-1]
-            member = stem_parts[-4]        # was stem_parts[-3]
+            year   = int(stem_parts[-2])  
+            member = stem_parts[-4]        
         except (IndexError, ValueError):
             continue
 
@@ -591,12 +645,12 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
     Examples:
-    python 01-download_cmip6.py
-    python 01-download_cmip6.py --models ACCESS-CM2 MIROC6
-    python 01-download_cmip6.py --scenarios ssp245
-    python 01-download_cmip6.py --variables pr
-    python 01-download_cmip6.py --dry-run
-    python 01-download_cmip6.py --catalog-only
+    python 01_download-cmip6.py
+    python 01_download-cmip6.py --models ACCESS-CM2 MIROC6
+    python 01_download-cmip6.py --scenarios ssp245
+    python 01_download-cmip6.py --variables pr
+    python 01_download-cmip6.py --dry-run
+    python 01_download-cmip6.py --catalog-only
         """,
     )
     parser.add_argument(
@@ -623,6 +677,10 @@ def parse_args():
         "--catalog-only", action="store_true",
         help="Skip downloading, just regenerate the catalog CSV"
     )
+    parser.add_argument(
+    "--manifest", default=r"D:\Research\CDHE\configs\cmip6-nexx-gdp_catalog-complete.csv",
+    help="Path to the NEX-GDDP-CMIP6 file manifest CSV (default: manifest.csv)"
+    )
     return parser.parse_args()
 
 
@@ -638,13 +696,15 @@ def main():
         write_catalog(cfg)
         return
 
-    tasks = generate_tasks(
-        cfg,
-        filter_models=args.models,
-        filter_scenarios=args.scenarios,
-        filter_variables=args.variables,
-    )
+    filter_models = args.models if args.models else list(cfg["models"].keys())
 
+    tasks = generate_tasks_from_csv(
+            csv_path=args.manifest,
+            cfg=cfg,
+            filter_models=filter_models,
+            filter_scenarios=args.scenarios,
+            filter_variables=args.variables,
+        )
     if not tasks:
         log.warning("No tasks generated — check your filters and config.")
         return
