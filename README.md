@@ -4,7 +4,7 @@ This repository contains the code and workflows used to analyze historical and f
 The repository is designed to provide a reproducible framework for climate risk assessment and adaptation planning, integrating climate projections, geospatial processing, statistical analysis, and visualization tools.
 
 ## Data Sources
-- Daily downscaled CMIP6
+- [Daily Downscaled CMIP6](https://nex-gddp-cmip6.s3.us-west-2.amazonaws.com/index.html)
 - ERA5
 - Population projection datasets
 
