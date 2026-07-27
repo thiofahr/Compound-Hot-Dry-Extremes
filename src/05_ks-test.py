@@ -18,7 +18,7 @@ Each run targets one or more categories. For every requested category,
 ToE is computed for ALL variables defined under that category below:
     frequency : chde_n_events, chde_n_days
     duration  : chde_duration_mean, chde_duration_max
-    intensity : CHDMI_n_events, CHDMI_sum, CHDMI_mean, CHDMI_max
+    severity  : severity_mean, severity_max 
 
 Variables within a category are bundled as separate named DataArrays
 inside that category's single output file (see OUTPUT STRUCTURE below).
@@ -80,7 +80,7 @@ ENCODE_OPTS      = dict(zlib=True, complevel=4, dtype="float32")
 CATEGORY_MAP = {
     "frequency": ["chde_n_events", "chde_n_days"],
     "duration": ["chde_duration_mean", "chde_duration_max"],
-    "intensity": ["CHDMI_n_events", "CHDMI_sum", "CHDMI_mean", "CHDMI_max"],
+    "severity": ["severity_mean", "severity_max"],
 }
 VAR_TO_CATEGORY = {v: cat for cat, vs in CATEGORY_MAP.items() for v in vs}
 
@@ -319,7 +319,7 @@ def run_all(
     (model, scenario, category) under toe_dir/{category}/.
     """
     output_root = Path(cfg["output_dir"])
-    metrics_dir = output_root / "daily" / "chde_metrics"
+    metrics_dir = output_root / "daily" / "metrics"
     toe_dir     = output_root / "daily" / "toe"
 
     # Validate requested categories
